@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Incident Analyzer — Architecture & Workflow</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --surface2: #f0f1f4;
+    --border: rgba(0,0,0,0.08);
+    --border-bright: rgba(0,0,0,0.16);
+    --text: #1a1d26;
+    --muted: #7a8099;
+    --angular: #c4234f;
+    --angular-dim: rgba(196,35,79,0.08);
+    --angular-glow: rgba(196,35,79,0.18);
+    --spring: #1a6fd4;
+    --spring-dim: rgba(26,111,212,0.08);
+    --spring-glow: rgba(26,111,212,0.18);
+    --python: #c97200;
+    --python-dim: rgba(201,114,0,0.08);
+    --python-glow: rgba(201,114,0,0.18);
+    --gemini: #6d3fd6;
+    --gemini-dim: rgba(109,63,214,0.08);
+    --local: #0e9462;
+    --local-dim: rgba(14,148,98,0.08);
+    --interrupt: #d45c00;
+    --interrupt-dim: rgba(212,92,0,0.08);
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-display: 'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,0,0,0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,0,0,0.045) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrapper {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 48px 32px 80px;
+  }
+
+  /* Header */
+  .header {
+    margin-bottom: 48px;
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+  }
+  .header-badge {
+    background: var(--surface2);
+    border: 1px solid var(--border-bright);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    margin-top: 6px;
+  }
+  .header h1 {
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.2;
+  }
+  .header p {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 6px;
+    line-height: 1.6;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 36px;
+    padding: 14px 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  /* Flow section wrapper */
+  .flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* Service block */
+  .service {
+    position: relative;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+  .service:hover { border-color: var(--border-bright); }
+  .service.angular { --accent: var(--angular); --dim: var(--angular-dim); --glow: var(--angular-glow); }
+  .service.spring  { --accent: var(--spring);  --dim: var(--spring-dim);  --glow: var(--spring-glow); }
+  .service.python  { --accent: var(--python);  --dim: var(--python-dim);  --glow: var(--python-glow); }
+
+  .service-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+  }
+  .service-header:hover { background: var(--surface2); }
+
+  .service-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--glow);
+    flex-shrink: 0;
+    animation: pulse 2.5s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .service-label {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.02em;
+  }
+  .service-port {
+    font-size: 10px;
+    color: var(--muted);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 7px;
+  }
+  .service-tech {
+    font-size: 10px;
+    color: var(--muted);
+    margin-left: auto;
+  }
+  .chevron {
+    margin-left: 8px;
+    color: var(--muted);
+    font-size: 10px;
+    transition: transform 0.2s;
+  }
+  .service.collapsed .chevron { transform: rotate(-90deg); }
+
+  .service-body {
+    padding: 20px;
+    background: var(--bg);
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+    transition: all 0.3s;
+  }
+  .service.collapsed .service-body { display: none; }
+
+  /* File cards */
+  .file-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s, transform 0.15s;
+    position: relative;
+    overflow: hidden;
+  }
+  .file-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .file-card:hover {
+    border-color: var(--accent);
+    background: var(--surface2);
+    transform: translateY(-1px);
+  }
+  .file-card:hover::before { opacity: 1; }
+
+  .file-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 4px;
+    word-break: break-all;
+  }
+  .file-desc {
+    font-size: 10px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .file-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .tag {
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  .tag.gemini  { background: var(--gemini-dim); color: var(--gemini); border: 1px solid rgba(109,63,214,0.2); }
+  .tag.local   { background: var(--local-dim);  color: var(--local);  border: 1px solid rgba(14,148,98,0.2); }
+  .tag.langgraph { background: var(--interrupt-dim); color: var(--interrupt); border: 1px solid rgba(212,92,0,0.2); }
+  .tag.api     { background: var(--spring-dim); color: var(--spring); border: 1px solid rgba(26,111,212,0.2); }
+  .tag.state   { background: var(--angular-dim); color: var(--angular); border: 1px solid rgba(196,35,79,0.2); }
+  .tag.data    { background: rgba(0,0,0,0.04); color: var(--muted); border: 1px solid var(--border); }
+
+  /* Connector arrows between services */
+  .connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 0;
+    position: relative;
+  }
+  .connector-line {
+    position: absolute;
+    left: 50%;
+    top: 0; bottom: 0;
+    width: 1px;
+    background: linear-gradient(to bottom, var(--from-color), var(--to-color));
+    transform: translateX(-50%);
+  }
+  .connector-pill {
+    position: relative;
+    z-index: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border-bright);
+    border-radius: 20px;
+    padding: 5px 14px;
+    font-size: 10px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .connector-arrow {
+    font-size: 14px;
+    color: var(--muted);
+    animation: bounce 1.5s ease-in-out infinite;
+  }
+  @keyframes bounce {
+    0%,100% { transform: translateY(0); }
+    50% { transform: translateY(3px); }
+  }
+
+  /* Workflow section */
+  .workflow-section {
+    margin-top: 48px;
+  }
+  .section-title {
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Pipeline */
+  .pipeline {
+    display: flex;
+    gap: 0;
+    align-items: stretch;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .pipeline::-webkit-scrollbar { height: 4px; }
+  .pipeline::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+
+  .pipe-step {
+    flex: 1;
+    min-width: 150px;
+    position: relative;
+  }
+  .pipe-step + .pipe-step::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 50%;
+    width: 0; height: 0;
+    border-top: 8px solid transparent;
+    border-bottom: 8px solid transparent;
+    border-left: 10px solid var(--border-bright);
+    transform: translateY(-50%);
+    z-index: 2;
+  }
+
+  .pipe-card {
+    margin: 0 2px 0 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    height: 100%;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .pipe-step:first-child .pipe-card { margin-left: 0; }
+  .pipe-card:hover {
+    border-color: var(--border-bright);
+    background: var(--surface2);
+  }
+  .pipe-card.interrupt-card {
+    border-color: var(--interrupt);
+    background: var(--interrupt-dim);
+  }
+
+  .pipe-agent {
+    font-size: 9px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 5px;
+  }
+  .pipe-name {
+    font-family: var(--font-display);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+    line-height: 1.3;
+  }
+  .pipe-card.interrupt-card .pipe-name { color: var(--interrupt); }
+  .pipe-reads {
+    font-size: 10px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .pipe-reads span {
+    display: inline-block;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    margin: 1px 1px 0 0;
+    font-size: 9px;
+    color: var(--muted);
+  }
+  .pipe-writes {
+    margin-top: 7px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+  }
+  .write-badge {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 500;
+  }
+
+  /* Two-phase API */
+  .phases {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 20px;
+  }
+  .phase-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .phase-card.phase1 { border-top: 2px solid var(--spring); }
+  .phase-card.phase2 { border-top: 2px solid var(--local); }
+
+  .phase-label {
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+  }
+  .phase-endpoint {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 10px;
+    padding: 6px 10px;
+    background: var(--surface2);
+    border-radius: 5px;
+    word-break: break-all;
+  }
+  .phase-endpoint .method {
+    color: var(--spring);
+    margin-right: 6px;
+  }
+  .phase-flow {
+    font-size: 10px;
+    color: var(--muted);
+    line-height: 1.9;
+  }
+  .phase-flow .arrow { color: var(--muted); margin: 0 4px; }
+  .phase-flow .hl { color: var(--text); }
+
+  /* Modal overlay */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.35);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border-bright);
+    border-radius: 14px;
+    padding: 28px;
+    max-width: 480px;
+    width: 90%;
+    position: relative;
+    animation: modalIn 0.2s ease;
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: scale(0.96) translateY(8px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .modal-close {
+    position: absolute;
+    top: 14px; right: 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: 14px;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .modal-close:hover { color: var(--text); border-color: var(--border-bright); }
+  .modal-tag {
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 8px;
+  }
+  .modal-title {
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 12px;
+    word-break: break-all;
+  }
+  .modal-body {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.8;
+  }
+  .modal-body code {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  @media (max-width: 600px) {
+    .phases { grid-template-columns: 1fr; }
+    .header h1 { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrapper">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-badge">Architecture</div>
+    <div>
+      <h1>AI Incident Root Cause Analyzer</h1>
+      <p>3-service architecture · LangGraph multi-agent · Human-in-the-loop · RAG knowledge base</p>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--gemini)"></div>Calls Gemini API</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--local)"></div>Local embedding model</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--interrupt)"></div>LangGraph / interrupt</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--spring)"></div>HTTP / REST</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--angular)"></div>UI / state</div>
+  </div>
+
+  <!-- Services flow -->
+  <div class="flow">
+
+    <!-- Angular -->
+    <div class="service angular" id="svc-angular">
+      <div class="service-header" onclick="toggleService('svc-angular')">
+        <div class="service-dot"></div>
+        <span class="service-label">Angular UI</span>
+        <span class="service-port">:4200</span>
+        <span class="service-tech">Angular 17 · Signals · SCSS</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="service-body">
+        <div class="file-card" onclick="openModal('app.component.ts','app/app.component.ts','Root component. Owns all 4 signals: <code>step</code>, <code>rootCauseResult</code>, <code>incidentReport</code>, <code>error</code>. Has <code>onAnalyze()</code>, <code>onApprove()</code>, <code>onReset()</code>. Sets the step progression timers at 2s and 4.5s to animate agent stages while waiting for the real API response.','state')">
+          <div class="file-name">app.component.ts</div>
+          <div class="file-desc">Root component — owns all state signals</div>
+          <div class="file-tags"><span class="tag state">State</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('incident.service.ts','app/services/incident.service.ts','The ONLY file in Angular that makes HTTP calls. <code>analyze(logInput)</code> POSTs to <code>/api/v1/incidents/analyze</code>. <code>approve(sessionId, payload)</code> POSTs to <code>/api/v1/incidents/analyze/{id}/approve</code>. Returns Observables that app.component subscribes to.','api')">
+          <div class="file-name">incident.service.ts</div>
+          <div class="file-desc">Only file that calls HTTP endpoints</div>
+          <div class="file-tags"><span class="tag api">HTTP</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('log-input','components/log-input/','Textarea for pasting raw logs. Sample and clear buttons. Emits <code>(analyze)</code> EventEmitter to parent. Disabled while analysis is running to prevent re-submission.','data')">
+          <div class="file-name">log-input/</div>
+          <div class="file-desc">Log textarea, sample &amp; clear buttons</div>
+          <div class="file-tags"><span class="tag data">Component</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('agent-progress','components/agent-progress/','Visual pipeline tracker. Receives <code>step</code> signal as Input. Shows which of the 4 agents is active, done, or pending. The step value is driven by both the real API response and the setTimeout timers in app.component.','data')">
+          <div class="file-name">agent-progress/</div>
+          <div class="file-desc">Visual agent pipeline tracker</div>
+          <div class="file-tags"><span class="tag data">Component</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('root-cause-card','components/root-cause-card/','Renders Phase 1 result. Shows root cause text, confidence score, supporting evidence. Has Approve and Reject buttons + optional feedback textarea. Emits <code>(approve)</code> with <code>{approved, feedback}</code> to parent. This is the UI for the human-in-the-loop checkpoint.','state')">
+          <div class="file-name">root-cause-card/</div>
+          <div class="file-desc">Human approval UI — Phase 1 result</div>
+          <div class="file-tags"><span class="tag state">Human checkpoint</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('incident-report','components/incident-report/','Renders the final Phase 2 IncidentReport. Displays severity badge (CRITICAL/HIGH/MEDIUM/LOW), title, affected components, recommended actions list, prevention measures list, and estimated impact.','data')">
+          <div class="file-name">incident-report/</div>
+          <div class="file-desc">Final report display — Phase 2 output</div>
+          <div class="file-tags"><span class="tag data">Component</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('incident.model.ts','app/models/incident.model.ts','All TypeScript interfaces: <code>ParsedLog</code>, <code>LogAnalysis</code>, <code>RootCauseResult</code>, <code>ApproveRequest</code>, <code>IncidentReport</code>. Plus the <code>AnalysisStep</code> union type that drives the step state machine.','data')">
+          <div class="file-name">incident.model.ts</div>
+          <div class="file-desc">All TypeScript interfaces</div>
+          <div class="file-tags"><span class="tag data">Types</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('proxy.conf.json','proxy.conf.json','Dev proxy config. Rewrites all <code>/api/**</code> requests to <code>http://localhost:8080</code>. Only used during <code>ng serve</code>. The Angular app never hardcodes the Spring Boot host.','data')">
+          <div class="file-name">proxy.conf.json</div>
+          <div class="file-desc">Rewrites /api/** → :8080</div>
+          <div class="file-tags"><span class="tag data">Dev config</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connector Angular → Spring -->
+    <div class="connector" style="--from-color: var(--angular); --to-color: var(--spring);">
+      <div class="connector-line"></div>
+      <div class="connector-pill">
+        <span class="connector-arrow">↓</span>
+        <span>proxy /api → HTTP REST</span>
+        <span class="connector-arrow">↓</span>
+      </div>
+    </div>
+
+    <!-- Spring Boot -->
+    <div class="service spring" id="svc-spring">
+      <div class="service-header" onclick="toggleService('svc-spring')">
+        <div class="service-dot"></div>
+        <span class="service-label">Spring Boot Gateway</span>
+        <span class="service-port">:8080</span>
+        <span class="service-tech">Java 21 · Spring AI · WebFlux</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="service-body">
+        <div class="file-card" onclick="openModal('IncidentController.java','controller/IncidentController.java','Exposes <code>POST /api/v1/incidents/analyze</code> and <code>POST /api/v1/incidents/analyze/{sessionId}/approve</code>. Delegates immediately to <code>IncidentService</code>. Thin — no business logic here.','api')">
+          <div class="file-name">IncidentController.java</div>
+          <div class="file-desc">Exposes /analyze and /approve endpoints</div>
+          <div class="file-tags"><span class="tag api">REST</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('AiEnrichmentService.java','service/AiEnrichmentService.java','The ONLY Java file that calls Gemini. Uses Spring AI <code>ChatClient</code> pointing to Gemini&apos;s OpenAI-compatible endpoint. Sends first 500 chars of log. Returns <code>VALID - description</code> or <code>INVALID - reason</code>. Non-fatal — if it fails the request still continues to Python.','gemini')">
+          <div class="file-name">AiEnrichmentService.java</div>
+          <div class="file-desc">Spring AI → Gemini pre-validation</div>
+          <div class="file-tags"><span class="tag gemini">Gemini</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('IncidentService.java','service/IncidentService.java','Uses reactive <code>WebClient</code> to proxy requests to Python service. 5s connect timeout, 120s response timeout (LLM calls are slow). Deserialises responses into Java DTO objects.','api')">
+          <div class="file-name">IncidentService.java</div>
+          <div class="file-desc">WebClient proxy to Python :8000</div>
+          <div class="file-tags"><span class="tag api">Proxy</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('WebClientConfig.java','config/WebClientConfig.java','Builds the <code>WebClient</code> bean. 5s connection timeout, 120s response timeout, 2MB buffer. Base URL read from <code>application.yml</code>.','data')">
+          <div class="file-name">WebClientConfig.java</div>
+          <div class="file-desc">WebClient bean — timeouts &amp; buffer</div>
+          <div class="file-tags"><span class="tag data">Config</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('GlobalExceptionHandler.java','controller/GlobalExceptionHandler.java','<code>@RestControllerAdvice</code>. Catches <code>WebClientResponseException</code>, <code>IllegalArgumentException</code>, and generic <code>Exception</code>. Returns <code>{&quot;error&quot;:...,&quot;detail&quot;:...}</code> JSON for all failure cases.','data')">
+          <div class="file-name">GlobalExceptionHandler.java</div>
+          <div class="file-desc">Centralised error response handler</div>
+          <div class="file-tags"><span class="tag data">Error</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('Java DTOs','model/*.java','Mirror the Python Pydantic models exactly. Use Lombok <code>@Data</code> and Jackson <code>@JsonProperty</code> for snake_case↔camelCase mapping. Files: <code>AnalyzeRequest</code>, <code>ApproveRequest</code>, <code>RootCauseResult</code>, <code>IncidentReport</code>, <code>ParsedLog</code>, <code>LogAnalysis</code>.','data')">
+          <div class="file-name">model/*.java</div>
+          <div class="file-desc">Request / response DTO classes</div>
+          <div class="file-tags"><span class="tag data">DTOs</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('application.yml','resources/application.yml','All runtime config: server port 8080, Gemini API key env var, Spring AI model name and temperature, Python service base URL, Swagger paths, log levels.','data')">
+          <div class="file-name">application.yml</div>
+          <div class="file-desc">All runtime configuration</div>
+          <div class="file-tags"><span class="tag data">Config</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connector Spring → Python -->
+    <div class="connector" style="--from-color: var(--spring); --to-color: var(--python);">
+      <div class="connector-line"></div>
+      <div class="connector-pill">
+        <span class="connector-arrow">↓</span>
+        <span>REST POST /api/analyze → Python :8000</span>
+        <span class="connector-arrow">↓</span>
+      </div>
+    </div>
+
+    <!-- Python -->
+    <div class="service python" id="svc-python">
+      <div class="service-header" onclick="toggleService('svc-python')">
+        <div class="service-dot"></div>
+        <span class="service-label">Python FastAPI AI Service</span>
+        <span class="service-port">:8000</span>
+        <span class="service-tech">LangGraph · LangChain · Gemini · FAISS</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="service-body">
+        <div class="file-card" onclick="openModal('main.py','main.py','FastAPI app entry point. Defines <code>POST /api/analyze</code> (Phase 1) and <code>POST /api/analyze/{id}/approve</code> (Phase 2). Phase 1 calls <code>graph.invoke(initial_state, config)</code>. Phase 2 calls <code>graph.update_state(config, {human_approved, human_feedback})</code> then <code>graph.invoke(None, config)</code> to resume.','langgraph')">
+          <div class="file-name">main.py</div>
+          <div class="file-desc">FastAPI entry — invokes LangGraph</div>
+          <div class="file-tags"><span class="tag langgraph">LangGraph</span><span class="tag api">API</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('graph/workflow.py','graph/workflow.py','Core LangGraph definition. Declares <code>IncidentState</code> TypedDict. Registers 4 agent nodes. Sets edges: <code>START→parse→analyze→reason→[interrupt]→summarize→END</code>. Compiles with <code>MemorySaver()</code> as checkpointer and <code>interrupt_before=[&quot;summarize_incident&quot;]</code>.','langgraph')">
+          <div class="file-name">graph/workflow.py</div>
+          <div class="file-desc">StateGraph + IncidentState + interrupt</div>
+          <div class="file-tags"><span class="tag langgraph">LangGraph</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('agents/log_parser.py','agents/log_parser.py','Agent 1. LangChain chain: <code>ChatPromptTemplate | ChatGoogleGenerativeAI(temp=0) | PydanticOutputParser[ParsedLogOutput]</code>. Reads <code>log_input</code> from state, returns <code>{parsed_log}</code> — services, error types, timestamps, stack traces, key events.','gemini')">
+          <div class="file-name">agents/log_parser.py</div>
+          <div class="file-desc">Agent 1 — extracts structure from logs</div>
+          <div class="file-tags"><span class="tag gemini">Gemini</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('agents/log_analyzer.py','agents/log_analyzer.py','Agent 2. Same chain pattern as log_parser. Reads <code>log_input + parsed_log</code>. Returns <code>{analysis}</code> — anomalies, recurring patterns, cascading failures, timeline.','gemini')">
+          <div class="file-name">agents/log_analyzer.py</div>
+          <div class="file-desc">Agent 2 — anomaly &amp; pattern detection</div>
+          <div class="file-tags"><span class="tag gemini">Gemini</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('agents/root_cause_reasoner.py','agents/root_cause_reasoner.py','Agent 3. First calls <code>knowledge_base.similarity_search(error_patterns, k=3)</code> using the local embedding model. Injects top-3 knowledge base entries into the Gemini prompt as RAG context. Returns <code>{root_cause, confidence, supporting_evidence, rag_context}</code>. Graph pauses after this agent.','gemini')">
+          <div class="file-name">agents/root_cause_reasoner.py</div>
+          <div class="file-desc">Agent 3 — RAG + Gemini root cause</div>
+          <div class="file-tags"><span class="tag gemini">Gemini</span><span class="tag local">Local model</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('agents/incident_summarizer.py','agents/incident_summarizer.py','Agent 4. Runs only after human approval (Phase 2 resume). Reads full state including <code>human_feedback</code>. Calls Gemini to generate the full report: severity level, title, affected components, recommended actions, prevention measures, estimated impact.','gemini')">
+          <div class="file-name">agents/incident_summarizer.py</div>
+          <div class="file-desc">Agent 4 — final report after approval</div>
+          <div class="file-tags"><span class="tag gemini">Gemini</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('rag/knowledge_base.py','rag/knowledge_base.py','Loads <code>all-MiniLM-L6-v2</code> sentence transformer locally (~80 MB). Builds a FAISS vector index from 12 seed incident patterns at startup. Exposes <code>similarity_search(query, k=3)</code> — converts query to a 384-dim vector, finds nearest neighbours in FAISS, returns matching knowledge base entries.','local')">
+          <div class="file-name">rag/knowledge_base.py</div>
+          <div class="file-desc">Local FAISS + all-MiniLM embeddings</div>
+          <div class="file-tags"><span class="tag local">Local model</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('rag/seed_data.py','rag/seed_data.py','Plain Python list of 12 incident pattern dicts (kb_001–kb_012). No logic — pure data. Covers: DB connection pool exhaustion, memory leaks, CPU spikes, deadlocks, Kafka lag, SSL errors, DNS failures, and more. Imported by knowledge_base.py to build the FAISS index.','data')">
+          <div class="file-name">rag/seed_data.py</div>
+          <div class="file-desc">12 pre-seeded incident patterns</div>
+          <div class="file-tags"><span class="tag data">Data</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('models/schemas.py','models/schemas.py','All Pydantic models: <code>AnalyzeRequest</code>, <code>ApproveRequest</code>, <code>RootCauseResult</code>, <code>IncidentReport</code>, <code>ParsedLogOutput</code>, <code>LogAnalysisOutput</code>. Used by both the FastAPI endpoints and the LangChain PydanticOutputParsers inside each agent.','data')">
+          <div class="file-name">models/schemas.py</div>
+          <div class="file-desc">All Pydantic request/response models</div>
+          <div class="file-tags"><span class="tag data">Pydantic</span></div>
+        </div>
+        <div class="file-card" onclick="openModal('config.py','config.py','Reads <code>GEMINI_API_KEY</code> from <code>.env</code> using pydantic-settings. Single settings object imported by all agents. Centralises all env vars.','data')">
+          <div class="file-name">config.py</div>
+          <div class="file-desc">Reads GEMINI_API_KEY from .env</div>
+          <div class="file-tags"><span class="tag data">Config</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Agent Pipeline -->
+  <div class="workflow-section">
+    <div class="section-title">LangGraph agent pipeline</div>
+    <div class="pipeline">
+      <div class="pipe-step">
+        <div class="pipe-card">
+          <div class="pipe-agent">Agent 1</div>
+          <div class="pipe-name">Log Parser</div>
+          <div class="pipe-reads">Reads: <span>log_input</span></div>
+          <div class="pipe-writes">
+            <span class="write-badge" style="background:var(--python-dim);color:var(--python);border:1px solid rgba(201,114,0,0.2)">→ parsed_log</span>
+          </div>
+        </div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-card">
+          <div class="pipe-agent">Agent 2</div>
+          <div class="pipe-name">Log Analyzer</div>
+          <div class="pipe-reads">Reads: <span>log_input</span> <span>parsed_log</span></div>
+          <div class="pipe-writes">
+            <span class="write-badge" style="background:var(--python-dim);color:var(--python);border:1px solid rgba(201,114,0,0.2)">→ analysis</span>
+          </div>
+        </div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-card">
+          <div class="pipe-agent">Agent 3</div>
+          <div class="pipe-name">Root Cause Reasoner</div>
+          <div class="pipe-reads">Reads: <span>analysis</span> + FAISS RAG</div>
+          <div class="pipe-writes">
+            <span class="write-badge" style="background:var(--python-dim);color:var(--python);border:1px solid rgba(201,114,0,0.2)">→ root_cause</span>
+            <span class="write-badge" style="background:var(--gemini-dim);color:var(--gemini);border:1px solid rgba(109,63,214,0.2)">→ confidence</span>
+          </div>
+        </div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-card interrupt-card">
+          <div class="pipe-agent" style="color:var(--interrupt)">interrupt_before</div>
+          <div class="pipe-name">Human Checkpoint</div>
+          <div class="pipe-reads" style="color:var(--interrupt);opacity:0.8">Graph pauses here. State saved to MemorySaver. API returns Phase 1 response.</div>
+        </div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-card">
+          <div class="pipe-agent">Agent 4</div>
+          <div class="pipe-name">Incident Summarizer</div>
+          <div class="pipe-reads">Reads: full state + <span>human_feedback</span></div>
+          <div class="pipe-writes">
+            <span class="write-badge" style="background:var(--local-dim);color:var(--local);border:1px solid rgba(14,148,98,0.2)">→ final_report</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Two-phase API -->
+  <div class="workflow-section">
+    <div class="section-title">Two-phase API flow</div>
+    <div class="phases">
+      <div class="phase-card phase1">
+        <div class="phase-label">Phase 1 — Analyze</div>
+        <div class="phase-endpoint"><span class="method">POST</span>/api/v1/incidents/analyze</div>
+        <div class="phase-flow">
+          <span class="hl">Angular</span> <span class="arrow">→</span> Spring Boot<br>
+          <span class="arrow">→</span> <span class="hl">AiEnrichmentService</span> (classify log)<br>
+          <span class="arrow">→</span> Python <code>graph.invoke(initial_state)</code><br>
+          <span class="arrow">→</span> Agents 1, 2, 3 run<br>
+          <span class="arrow">→</span> Graph pauses at interrupt<br>
+          <span class="arrow">→</span> Returns <span class="hl">session_id + RootCauseResult</span>
+        </div>
+      </div>
+      <div class="phase-card phase2">
+        <div class="phase-label">Phase 2 — Approve &amp; finalize</div>
+        <div class="phase-endpoint"><span class="method">POST</span>/api/v1/incidents/analyze/{id}/approve</div>
+        <div class="phase-flow">
+          <span class="hl">Analyst</span> approves/rejects in UI<br>
+          <span class="arrow">→</span> Spring Boot proxies to Python<br>
+          <span class="arrow">→</span> <code>graph.update_state(feedback)</code><br>
+          <span class="arrow">→</span> <code>graph.invoke(None, config)</code><br>
+          <span class="arrow">→</span> Agent 4 resumes from checkpoint<br>
+          <span class="arrow">→</span> Returns <span class="hl">IncidentReport</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModalDirect()">✕</button>
+    <div class="modal-tag" id="modal-tag"></div>
+    <div class="modal-title" id="modal-title"></div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+function toggleService(id) {
+  const el = document.getElementById(id);
+  el.classList.toggle('collapsed');
+}
+
+function openModal(name, path, desc, type) {
+  document.getElementById('modal-tag').textContent = path;
+  document.getElementById('modal-title').textContent = name;
+  document.getElementById('modal-body').innerHTML = desc;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal(e) {
+  if (e.target === document.getElementById('modal-overlay')) closeModalDirect();
+}
+
+function closeModalDirect() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModalDirect();
+});
+</script>
+</body>
+</html>

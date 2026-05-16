@@ -10,7 +10,7 @@
 ### 1. Python AI Service
 
 ```bash
-cd incident-analyzer-ai
+cd incident-analyzer-ai-repo
 python -m venv venv
 # Windows:
 venv\Scripts\activate
@@ -31,7 +31,7 @@ Service docs: http://localhost:8000/docs
 ### 2. Spring Boot API Gateway
 
 ```bash
-cd incident-analyzer-service
+cd incident-analyzer-service-repo
 
 # Set env variable (Windows PowerShell)
 $env:GEMINI_API_KEY = "your_key_here"
@@ -44,7 +44,7 @@ Swagger UI: http://localhost:8080/swagger-ui.html
 ### 3. Angular UI
 
 ```bash
-cd incident-analyzer-ui
+cd incident-analyzer-ui-repo
 npm install
 ng serve
 ```
